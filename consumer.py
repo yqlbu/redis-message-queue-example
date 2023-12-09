@@ -2,7 +2,8 @@ import redis
 import json
 from pydantic import BaseModel
 
-stream = "demo"
+stream_key = "demo"
+error_stream_key = "error_stream"
 consumer_group = "consumer_group"
 
 
@@ -19,33 +20,78 @@ r = redis.Redis(host="localhost", port=6379, db=0)
 # Create a consumer group
 # r.xgroup_create(stream, consumer_group, id="0", mkstream=True)
 
+
+def process_message(message_id, message_data):
+    try:
+        decoded_message = json.loads(
+            message_data[b"message"].decode("utf-8")
+        )  # Decode the message data
+
+        # Process the message here (you can perform any desired operations)
+        # TODO:
+        # Add business logic here
+
+        # Simulate processing (you can perform any desired operations)
+        # For demonstration purposes, assume processing fails for odd-numbered messages
+        # if decoded_message["id"] % 2 != 0:
+        #     raise Exception("Failed to process message")
+        print(f"Received message ID {message_id}: {decoded_message}")
+
+        # Acknowledge the message after processing
+        r.xack(stream_key, consumer_group, message_id)
+    except Exception as err:
+        print(f"Error processing message {message_id}: {err}")
+        handle_error(message_id, message_data)
+
+
+def handle_error(message_id, message_data):
+    retries = int(message_data[b"retries"]) if b"retries" in message_data else 0
+    if retries < 3:
+        retries += 1
+        # Update retries count and requeue the message back to the stream with updated metadata
+        r.xadd(
+            stream_key, {"content": message_data[b"content"], "retries": str(retries)}
+        )
+        # Acknowledge the original message to remove it from the pending list
+        r.xack(stream_key, consumer_group, message_id)
+        print(f"Message ID {message_id} requeued for retry ({retries}/3).")
+    else:
+        # Move the message to an error stream after reaching the maximum retry count
+        r.xadd(
+            error_stream_key,
+            {"content": message_data[b"content"], "error": "Reached maximum retries"},
+        )
+        # Acknowledge the original message to remove it from the pending list
+        r.xack(stream_key, consumer_group, message_id)
+        print(f"Message ID {message_id} moved to error stream.")
+
+
+# Process pending messages if any
+pending_messages = r.xpending(stream_key, consumer_group)
+if pending_messages:
+    for message_info in pending_messages["pending"]:  # type: ignore
+        message_id = message_info["message_id"]
+        message_data = r.xrange(stream, min=message_id, max=message_id)[0][1]  # type: ignore
+        process_message(message_id, message_data)
+
 # Read messages from the stream using the consumer group
 while True:
     # messages = r.xreadgroup(
     #     consumer_group, "consumer", {stream: ">"}, count=1, block=0
     # )  # never blocks receiving new messages from the stream
     messages = r.xreadgroup(
-        consumer_group, "consumer", {stream: ">"}, count=1, block=2000
+        consumer_group, "consumer", {stream_key: ">"}, count=1, block=2000
     )  # set block time to 2000 (2s) to wait for new messages from the stream; exit the loop
     if messages:
         message_id, message_data = messages[0][1][0]  # type: ignore
-        decoded_message = json.loads(
-            message_data[b"message"].decode("utf-8")
-        )  # Decode the message data
-        print(f"Received message ID {message_id}: {decoded_message}")
-        # Process the message here (you can perform any desired operations)
-        # Acknowledge the message after processing
-        r.xack(stream, consumer_group, message_id)
-        # Remove the last entry from the stream
-        r.xdel(stream, message_id)
-        print("Last entry deleted from the stream.")
+        process_message(message_id, message_data)
     else:
         print("No new messages.")
         break  # Exit the loop if there are no more messages
 
 # Get all the message from the stream
-msg = r.xrevrange(stream, count=20)
+msg = r.xrevrange(stream_key, count=20)
 print(msg)
 
 # # Get the current length of the stream
-print(r.xlen(stream))
+print(r.xlen(stream_key))
