@@ -1,0 +1,24 @@
+---
+version: "3.8"
+services:
+  redis:
+    container_name: redis_message_queue_instance
+    image: "redis:alpine"
+    user: root
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis-data:/data
+      - ./redis-conf:/etc/redis
+    environment:
+      - REDIS_REPLICATION_MODE=master
+    command: redis-server /etc/redis/redis.conf
+    restart: unless-stopped
+
+  watchtower:
+    container_name: watchtower
+    image: containrrr/watchtower
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["--cleanup", "--interval", "3600", "--debug"]
