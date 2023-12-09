@@ -1,4 +1,4 @@
-# redis-message-queue-example
+# redis-streams-example
 
 ## Table of Contents
 
