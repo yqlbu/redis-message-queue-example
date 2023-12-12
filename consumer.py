@@ -1,24 +1,12 @@
 import redis
 import json
-from pydantic import BaseModel
 
 stream_key = "demo"
 error_stream_key = "error_stream"
 consumer_group = "consumer_group"
 
-
-# Define data model
-class Event(BaseModel):
-    eventType: str
-    amount: int
-    item_id: str
-
-
 # Connect to a local redis instance
 r = redis.Redis(host="localhost", port=6379, db=0)
-
-# Create a consumer group
-# r.xgroup_create(stream, consumer_group, id="0", mkstream=True)
 
 
 def process_message(message_id, message_data):
@@ -80,18 +68,11 @@ while True:
     #     consumer_group, "consumer", {stream: ">"}, count=1, block=0
     # )  # never blocks receiving new messages from the stream
     messages = r.xreadgroup(
-        consumer_group, "consumer", {stream_key: ">"}, count=1, block=2000
-    )  # set block time to 2000 (2s) to wait for new messages from the stream; exit the loop
+        consumer_group, "consumer", {stream_key: ">"}, count=1, block=5000
+    )  # set block time to 5000 (5s) to wait for new messages from the stream; exit the loop
     if messages:
         message_id, message_data = messages[0][1][0]  # type: ignore
         process_message(message_id, message_data)
     else:
         print("No new messages.")
         break  # Exit the loop if there are no more messages
-
-# Get all the message from the stream
-msg = r.xrevrange(stream_key, count=20)
-print(msg)
-
-# # Get the current length of the stream
-print(r.xlen(stream_key))
