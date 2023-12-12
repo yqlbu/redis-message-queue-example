@@ -68,8 +68,8 @@ while True:
     #     consumer_group, "consumer", {stream: ">"}, count=1, block=0
     # )  # never blocks receiving new messages from the stream
     messages = r.xreadgroup(
-        consumer_group, "consumer", {stream_key: ">"}, count=1, block=5000
-    )  # set block time to 5000 (5s) to wait for new messages from the stream; exit the loop
+        consumer_group, "consumer", {stream_key: ">"}, count=1, block=10 * 1000
+    )  # set block time to 10 * 1000 (10s) to wait for new messages from the stream; exit the loop
     if messages:
         message_id, message_data = messages[0][1][0]  # type: ignore
         process_message(message_id, message_data)
